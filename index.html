@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="sr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>3D Minecraft - Fullscreen</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #6EB1E6; touch-action: none; font-family: sans-serif; user-select: none; }
+        
+        #ui-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; display: flex; flex-direction: column; justify-content: flex-end; z-index: 10; }
+        .controls-container { display: flex; justify-content: space-between; padding: 20px; align-items: flex-end; }
+        
+        #fullscreen-btn { position: absolute; top: 20px; right: 20px; width: 50px; height: 50px; background: rgba(0,0,0,0.5); color: white; border: 2px solid white; border-radius: 10px; pointer-events: auto; font-size: 12px; }
+        
+        /* DŽOJSTIK STIL */
+        #joystick { width: 120px; height: 120px; background: rgba(255, 255, 255, 0.3); border: 2px solid rgba(0,0,0,0.5); border-radius: 50%; pointer-events: auto; position: relative; }
+        #stick { width: 40px; height: 40px; background: rgba(0,0,0,0.5); border-radius: 50%; position: absolute; top: 40px; left: 40px; }
+        
+        .action-btns { display: flex; flex-direction: column; gap: 15px; pointer-events: auto; align-items: flex-end; }
+        .btn { width: 50px; height: 50px; background: rgba(255, 255, 255, 0.4); border: 2px solid rgba(0,0,0,0.5); border-radius: 50%; font-size: 20px; font-weight: bold; display: flex; justify-content: center; align-items: center; color: #111; }
+        .btn:active { background: rgba(255, 255, 255, 0.8); }
+        #modeBtn { width: 80px; border-radius: 10px; background: #E69138; color: white; border: 2px solid #555; }
+        #btnJump { width: 60px; height: 60px; }
+
+        #crosshair { position: absolute; top: 50%; left: 50%; width: 20px; height: 20px; transform: translate(-50%, -50%); color: rgba(255,255,255,0.8); font-size: 24px; text-shadow: 1px 1px 0 #000; display: flex; justify-content: center; align-items: center; pointer-events: none; }
+
+        .hotbar { display: flex; justify-content: center; gap: 5px; padding-bottom: 10px; pointer-events: auto; }
+        .slot { width: 40px; height: 40px; border: 3px solid #555; background: rgba(0,0,0,0.5); border-radius: 5px; display: flex; justify-content: center; align-items: center; }
+        .slot.active { border-color: #FFF; transform: scale(1.1); box-shadow: 0 0 10px rgba(255,255,255,0.5); }
+        .slot-color { width: 30px; height: 30px; border: 1px solid #000; }
+    </style>
+</head>
+<body>
+
+<div id="crosshair">+</div>
+<button id="fullscreen-btn">FS</button>
+
+<div id="ui-layer">
+    <div class="controls-container">
+        <div id="joystick"><div id="stick"></div></div>
+        <div class="action-btns">
+            <div class="btn" id="modeBtn">Zidaj</div>
+            <div class="btn" id="btnJump">▲</div>
+        </div>
+    </div>
+    <div class="hotbar" id="hotbar">
+        <div class="slot active" data-id="0"><div class="slot-color" style="background: #228B22;"></div></div>
+        <div class="slot" data-id="1"><div class="slot-color" style="background: #8B4513;"></div></div>
+        <div class="slot" data-id="2"><div class="slot-color" style="background: #808080;"></div></div>
+        <div class="slot" data-id="3"><div class="slot-color" style="background: #8B5A2B;"></div></div>
+        <div class="slot" data-id="4"><div class="slot-color" style="background: #1A661A;"></div></div>
+    </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+    // FULLSCREEN LOGIKA
+    document.getElementById('fullscreen-btn').addEventListener('click', () => {
+        if (!document.fullscreenElement) {
+            document.documentElement.requestFullscreen().catch(e => console.log(e));
+        } else {
+            document.exitFullscreen();
+        }
+    });
+
+    // 1. PROCEDURALNE TEKSTURE
+    function generateTexture(color1, color2, speckles, type="noise") {
+        const c = document.createElement('canvas'); c.width = 16; c.height = 16; const ctx = c.getContext('2d');
+        ctx.fillStyle = color1; ctx.fillRect(0, 0, 16, 16);
+        ctx.fillStyle = color2;
+        if (type === "noise") {
+            for (let i=0; i<speckles; i++) ctx.fillRect(Math.floor(Math.random()*16), Math.floor(Math.random()*16), 1, 1);
+        } else if (type === "lines") {
+            for (let i=0; i<16; i+=3) ctx.fillRect(i, 0, 1, 16);
+        } else if (type === "leaves") {
+            for (let i=0; i<100; i++) {
+                ctx.fillStyle = Math.random() > 0.5 ? color1 : color2;
+                ctx.fillRect(Math.floor(Math.random()*16), Math.floor(Math.random()*16), 2, 2);
+            }
+        }
+        const tex = new THREE.CanvasTexture(c); tex.magFilter = THREE.NearestFilter; return tex;
+    }
+
+    const matDirt = new THREE.MeshLambertMaterial({ map: generateTexture('#8B4513', '#5D2E0A', 40) });
+    const matGrassTop = new THREE.MeshLambertMaterial({ map: generateTexture('#228B22', '#1A661A', 40) });
+    const matStone = new THREE.MeshLambertMaterial({ map: generateTexture('#808080', '#606060', 50) });
+    const matWood = new THREE.MeshLambertMaterial({ map: generateTexture('#8B5A2B', '#5C3A21', 0, "lines") });
+    const matLeaves = new THREE.MeshLambertMaterial({ map: generateTexture('#2E8B57', '#006400', 0, "leaves"), transparent: true, opacity: 0.9 });
+
+    function getGrassSide() {
+        const c = document.createElement('canvas'); c.width = 16; c.height = 16; const ctx = c.getContext('2d');
+        ctx.fillStyle = '#8B4513'; ctx.fillRect(0, 0, 16, 16);
+        ctx.fillStyle = '#228B22'; ctx.fillRect(0, 0, 16, 4);
+        const tex = new THREE.CanvasTexture(c); tex.magFilter = THREE.NearestFilter;
+        return new THREE.MeshLambertMaterial({ map: tex });
+    }
+    const matGrassSide = getGrassSide();
+    const matGrassBlock = [matGrassSide, matGrassSide, matGrassTop, matDirt, matGrassSide, matGrassSide];
+
+    const blockMaterials = [matGrassBlock, matDirt, matStone, matWood, matLeaves];
+    let selectedBlockId = 0;
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x6EB1E6);
+    scene.fog = new THREE.Fog(0x6EB1E6, 15, 60);
+
+    const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 1000);
+    camera.rotation.order = 'YXZ'; 
+
+    const renderer = new THREE.WebGLRenderer({ antialias: false });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(window.devicePixelRatio);
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    document.body.appendChild(renderer.domElement);
+
+    scene.add(new THREE.AmbientLight(0xffffff, 0.55));
+    const dirLight = new THREE.DirectionalLight(0xffffff, 0.7);
+    dirLight.position.set(20, 40, 20);
+    dirLight.castShadow = true;
+    scene.add(dirLight);
+
+    const geometry = new THREE.BoxGeometry(1, 1, 1);
+    const worldMap = {}; 
+    const blocksArray = []; 
+
+    function addBlock(x, y, z, mat) {
+        const key = `${Math.round(x)},${Math.round(y)},${Math.round(z)}`;
+        if (worldMap[key]) return; 
+        const mesh = new THREE.Mesh(geometry, mat);
+        mesh.position.set(Math.round(x), Math.round(y), Math.round(z));
+        mesh.castShadow = true; mesh.receiveShadow = true;
+        scene.add(mesh);
+        worldMap[key] = mesh;
+        blocksArray.push(mesh);
+    }
+
+    function removeBlock(mesh) {
+        const key = `${Math.round(mesh.position.x)},${Math.round(mesh.position.y)},${Math.round(mesh.position.z)}`;
+        delete worldMap[key];
+        scene.remove(mesh);
+        blocksArray.splice(blocksArray.indexOf(mesh), 1);
+    }
+
+    const MAP_SIZE = 30; 
+    for (let x = -MAP_SIZE; x <= MAP_SIZE; x++) {
+        for (let z = -MAP_SIZE; z <= MAP_SIZE; z++) {
+            let height = Math.floor(Math.sin(x / 4) * 2 + Math.cos(z / 3) * 2);
+            for (let y = -4; y < height; y++) addBlock(x, y, z, matDirt);
+            addBlock(x, height, z, matGrassBlock);
+        }
+    }
+
+    let moveDir = {x: 0, z: 0};
+    const stick = document.getElementById('stick'), joystick = document.getElementById('joystick');
+    
+    joystick.addEventListener('touchmove', (e) => {
+        const rect = joystick.getBoundingClientRect();
+        const touch = Array.from(e.touches).find(t => t.target === joystick || t.target === stick);
+        if(!touch) return;
+        
+        let dx = touch.clientX - (rect.left + 60), dy = touch.clientY - (rect.top + 60);
+        let dist = Math.min(Math.sqrt(dx*dx + dy*dy), 40), angle = Math.atan2(dy, dx);
+        stick.style.left = (40 + Math.cos(angle) * dist) + "px";
+        stick.style.top = (40 + Math.sin(angle) * dist) + "px";
+        moveDir = {x: Math.cos(angle) * (dist/40), z: Math.sin(angle) * (dist/40)};
+    }, {passive: false});
+
+    joystick.addEventListener('touchend', () => { 
+        moveDir = {x:0, z:0}; 
+        stick.style.left="40px"; 
+        stick.style.top="40px"; 
+    });
+
+    const player = { height: 1.6, speed: 0.12, velocityY: 0, gravity: -0.015, jumpPower: 0.23, canJump: false };
+    camera.position.set(0, 10, 0);
+
+    let buildMode = true;
+    document.getElementById('btnJump').addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        if (player.canJump) { player.velocityY = player.jumpPower; player.canJump = false; }
+    });
+
+    const modeBtn = document.getElementById('modeBtn');
+    modeBtn.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        buildMode = !buildMode;
+        modeBtn.innerText = buildMode ? "Zidaj" : "Ruši";
+        modeBtn.style.background = buildMode ? "#E69138" : "#CC0000";
+    });
+
+    let isDragging = false, prevTouch = { x: 0, y: 0 }, tapTime = 0;
+
+    renderer.domElement.addEventListener('touchstart', (e) => {
+        if(e.target.closest('#joystick')) return;
+        isDragging = true;
+        prevTouch = { x: e.touches[0].pageX, y: e.touches[0].pageY };
+        tapTime = Date.now();
+    });
+
+    renderer.domElement.addEventListener('touchmove', (e) => {
+        if (!isDragging) return;
+        const touch = { x: e.touches[0].pageX, y: e.touches[0].pageY };
+        camera.rotation.y -= (touch.x - prevTouch.x) * 0.005;
+        camera.rotation.x -= (touch.y - prevTouch.y) * 0.005;
+        camera.rotation.x = Math.max(-Math.PI/2, Math.min(Math.PI/2, camera.rotation.x));
+        prevTouch = touch;
+    }, {passive: false});
+
+    const raycaster = new THREE.Raycaster();
+    renderer.domElement.addEventListener('touchend', (e) => {
+        isDragging = false;
+        if (Date.now() - tapTime < 200) {
+            raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
+            const intersects = raycaster.intersectObjects(blocksArray);
+            if (intersects.length > 0) {
+                const hit = intersects[0];
+                if (buildMode) {
+                    const pos = hit.object.position.clone().add(hit.face.normal);
+                    addBlock(pos.x, pos.y, pos.z, blockMaterials[selectedBlockId]);
+                } else {
+                    removeBlock(hit.object);
+                }
+            }
+        }
+    });
+
+    function checkWall(nx, nz) {
+        const r = 0.25;
+        const points = [[nx, nz], [nx + r, nz + r], [nx - r, nz + r], [nx + r, nz - r], [nx - r, nz - r]];
+        for (let p of points) {
+            let bx = Math.round(p[0]), bz = Math.round(p[1]);
+            for (let by = Math.floor(camera.position.y - 1); by <= Math.ceil(camera.position.y); by++) {
+                if (worldMap[`${bx},${by},${bz}`]) return true;
+            }
+        }
+        return false;
+    }
+
+    function animate() {
+        requestAnimationFrame(animate);
+        const dir = new THREE.Vector3(0, 0, -1).applyEuler(new THREE.Euler(0, camera.rotation.y, 0));
+        const right = new THREE.Vector3(1, 0, 0).applyEuler(new THREE.Euler(0, camera.rotation.y, 0));
+        let moveX = (dir.x * -moveDir.z) + (right.x * moveDir.x);
+        let moveZ = (dir.z * -moveDir.z) + (right.z * moveDir.x);
+        if (!checkWall(camera.position.x + moveX * 0.2, camera.position.z + moveZ * 0.2)) {
+            camera.position.x += moveX * 0.2;
+            camera.position.z += moveZ * 0.2;
+        }
+        player.velocityY += player.gravity;
+        camera.position.y += player.velocityY;
+        let groundY = -100;
+        const pts = [[camera.position.x, camera.position.z], [camera.position.x+0.2, camera.position.z+0.2], [camera.position.x-0.2, camera.position.z-0.2]];
+        for (let p of pts) {
+            let bx = Math.round(p[0]), bz = Math.round(p[1]);
+            for (let by = Math.floor(camera.position.y + 1); by >= -10; by--) {
+                if (worldMap[`${bx},${by},${bz}`]) { groundY = by + 0.5; break; }
+            }
+        }
+        if (camera.position.y - player.height <= groundY) {
+            camera.position.y = groundY + player.height;
+            player.velocityY = 0;
+            player.canJump = true;
+        } else { player.canJump = false; }
+        renderer.render(scene, camera);
+    }
+    animate();
+</script>
+</body>
+</html>
